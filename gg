@@ -1,133 +1,150 @@
--- Indo Hangout Auto Fishing GUI v2
--- Loader: loadstring(game:HttpGet("https://raw.githubusercontent.com/USERNAME/REPO/main/indohangout_auto.lua"))()
+-- Debug + Robust Indo Hangout Auto Fishing v2 (Debug Mode)
+-- Paste ini di Delta executor, lihat Output/Console untuk print()
 
--- Ambil Orion Library
-local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Orion/main/source"))()
+local function safeGet(url)
+    local ok, res = pcall(function()
+        return game:HttpGet(url, true)
+    end)
+    return ok and res or nil, ok and nil or res
+end
 
--- Window
-local Window = OrionLib:MakeWindow({
-    Name = "Indo Hangout | Auto Mancing v2",
-    HidePremium = false,
-    SaveConfig = true,
-    ConfigFolder = "IndoHangoutFishing"
-})
-
--- Variabel
-getgenv().AutoMancing = false
-getgenv().Delay = 1
-local StatusLabel = "OFF"
-
--- Anti AFK
-local vu = game:GetService("VirtualUser")
-game:GetService("Players").LocalPlayer.Idled:Connect(function()
-    vu:Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame)
-    task.wait(1)
-    vu:Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame)
-end)
-
--- Cari RemoteEvent Fishing otomatis
-local FishingRemote = nil
-for _,v in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
-    if v:IsA("RemoteEvent") and string.lower(v.Name):find("fish") then
-        FishingRemote = v
-        break
+-- Try load Orion safely
+local OrionLib = nil
+do
+    local url = "https://raw.githubusercontent.com/shlexware/Orion/main/source"
+    local body, err = safeGet(url)
+    if body then
+        local ok, lib = pcall(function() return loadstring(body)() end)
+        if ok and lib then
+            OrionLib = lib
+            print("[DEBUG] OrionLib loaded.")
+        else
+            print("[DEBUG] Orion loadstring failed:", lib or "unknown")
+        end
+    else
+        print("[DEBUG] Cannot HttpGet Orion:", err)
     end
 end
 
--- Tab Main
-local MainTab = Window:MakeTab({
-    Name = "Main",
-    Icon = "rbxassetid://4483345998",
-    PremiumOnly = false
-})
+-- Settings
+getgenv().AutoMancing = false
+getgenv().Delay = 1
 
--- Status Info
-MainTab:AddParagraph("Status", "Auto Mancing: "..StatusLabel)
+-- Anti-AFK (safe)
+pcall(function()
+    local vu = game:GetService("VirtualUser")
+    game:GetService("Players").LocalPlayer.Idled:Connect(function()
+        vu:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+        task.wait(1)
+        vu:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+    end)
+    print("[DEBUG] Anti-AFK connected.")
+end)
 
--- Toggle Auto Mancing
-MainTab:AddToggle({
-    Name = "Auto Mancing",
-    Default = false,
-    Callback = function(Value)
-        getgenv().AutoMancing = Value
-        StatusLabel = Value and "ON ✅" or "OFF ❌"
-        
-        if Value then
-            OrionLib:MakeNotification({
-                Name = "Fishing Started",
-                Content = "Auto Mancing Aktif!",
-                Image = "rbxassetid://4483345998",
-                Time = 3
-            })
-            task.spawn(function()
-                while getgenv().AutoMancing do
-                    pcall(function()
-                        if FishingRemote then
-                            FishingRemote:FireServer("Cast")
-                            task.wait(getgenv().Delay)
-                            FishingRemote:FireServer("Reel")
-                        end
-                    end)
-                    task.wait(getgenv().Delay)
-                end
-            end)
-        else
-            OrionLib:MakeNotification({
-                Name = "Fishing Stopped",
-                Content = "Auto Mancing Berhenti.",
-                Image = "rbxassetid://4483345998",
-                Time = 3
-            })
+-- Function: search likely RemoteEvents in ReplicatedStorage
+local function findFishingRemotes()
+    local candidates = {}
+    local rs = game:GetService("ReplicatedStorage")
+    for _, v in ipairs(rs:GetDescendants()) do
+        if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+            local name = tostring(v.Name):lower()
+            if name:find("fish") or name:find("fishing") or name:find("rod") or name:find("cast") or name:find("reel") or name:find("catch") then
+                table.insert(candidates, v)
+            end
         end
     end
-})
+    return candidates
+end
 
--- Slider Delay
-MainTab:AddSlider({
-    Name = "Delay (detik)",
-    Min = 0.5,
-    Max = 5,
-    Default = 1,
-    Color = Color3.fromRGB(255,255,255),
-    Increment = 0.1,
-    ValueName = "detik",
-    Callback = function(Value)
-        getgenv().Delay = Value
+local detected = findFishingRemotes()
+if #detected == 0 then
+    print("[DEBUG] Tidak menemukan RemoteEvent yang jelas untuk 'fish' di ReplicatedStorage.")
+    print("[DEBUG] Daftar semua RemoteEvent/RemoteFunction di ReplicatedStorage:")
+    for _, v in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+        if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+            print(" -", v:GetFullName(), "("..v.ClassName..")")
+        end
     end
-})
-
--- Tombol Stop manual
-MainTab:AddButton({
-    Name = "Stop Auto Mancing",
-    Callback = function()
-        getgenv().AutoMancing = false
-        StatusLabel = "OFF ❌"
-        OrionLib:MakeNotification({
-            Name = "Stopped",
-            Content = "Auto Mancing dimatikan manual.",
-            Image = "rbxassetid://4483345998",
-            Time = 2
-        })
+    print("\n[INSTRUKSI] Jika tidak ada yang berkaitan, gunakan RemoteSpy/RemoteLogger di executor untuk mencari remote yang menangani mancing.")
+else
+    print("[DEBUG] RemoteEvent kandidat ditemukan:")
+    for i, r in ipairs(detected) do
+        print(i..")", r:GetFullName())
     end
-})
+end
 
--- Info Tab
-local InfoTab = Window:MakeTab({
-    Name = "Info",
-    Icon = "rbxassetid://4483345998",
-    PremiumOnly = false
-})
+-- Create GUI (Orion if available, otherwise basic ScreenGui)
+local Window = nil
+if OrionLib then
+    Window = OrionLib:MakeWindow({Name = "Indo Hangout | Auto Mancing (Debug)", HidePremium = false, SaveConfig = true, ConfigFolder = "IndoHangoutFishing"})
+    local main = Window:MakeTab({Name = "Main"})
+    main:AddParagraph("Status", "Debug Mode: lihat Output/Console untuk detail.")
+    main:AddToggle({
+        Name = "Auto Mancing",
+        Default = false,
+        Callback = function(val)
+            getgenv().AutoMancing = val
+            print("[DEBUG] AutoMancing set to", val)
+            if val then
+                OrionLib:MakeNotification({Name="AutoMancing", Content="Started (Debug)", Time=2})
+            else
+                OrionLib:MakeNotification({Name="AutoMancing", Content="Stopped", Time=2})
+            end
+        end
+    })
+    main:AddSlider({Name="Delay (sec)", Min=0.5, Max=5, Default=1, Increment=0.1, ValueName="s", Callback=function(v) getgenv().Delay = v print("[DEBUG] Delay =", v) end})
+    OrionLib:Init()
+else
+    -- Basic fallback GUI
+    local Players = game:GetService("Players")
+    local localPlayer = Players.LocalPlayer
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "AutoMancingFallbackGUI_" .. tostring(math.random(1000,9999))
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+    local frame = Instance.new("Frame", screenGui)
+    frame.Size = UDim2.new(0,0,0,0)
+    frame.Position = UDim2.new(0.01,0,0.2,0)
+    frame.BackgroundTransparency = 1
 
-InfoTab:AddParagraph("Cara Pakai", "1. Klik Auto Mancing\n2. Atur Delay sesuai kecepatan\n3. Bisa Stop kapan saja\n4. Anti-AFK aktif otomatis\n5. RemoteEvent Fishing otomatis terdeteksi")
+    local btn = Instance.new("TextButton", frame)
+    btn.Text = "Start Auto Mancing (Debug)"
+    btn.Size = UDim2.new(0,0,0,30)
+    btn.Position = UDim2.new(0,0,0,0)
+    btn.MouseButton1Click:Connect(function()
+        getgenv().AutoMancing = not getgenv().AutoMancing
+        btn.Text = getgenv().AutoMancing and "Stop Auto Mancing (Debug)" or "Start Auto Mancing (Debug)"
+        print("[DEBUG] AutoMancing toggled to", getgenv().AutoMancing)
+    end)
+    -- attempt to expand nicely
+    frame.Size = UDim2.new(0,250,0,40)
+    print("[DEBUG] Orion tidak tersedia — fallback GUI dibuat di PlayerGui.")
+end
 
--- Credits Tab
-local CreditsTab = Window:MakeTab({
-    Name = "Credits",
-    Icon = "rbxassetid://4483345998",
-    PremiumOnly = false
-})
+-- Main auto-mancing loop (debug safe: cetak error & hanya jalankan jika remote ditemukan)
+task.spawn(function()
+    while true do
+        if getgenv().AutoMancing then
+            pcall(function()
+                if #detected > 0 then
+                    local r = detected[1] -- pakai kandidat pertama (user bisa ubah manual)
+                    -- PRINT sebelum fire agar terlihat di console
+                    print("[DEBUG] Memanggil remote:", r:GetFullName(), "Args: Cast -> Reel")
+                    -- contoh panggilan (banyak game beda args): coba beberapa kombinasi
+                    local ok, err = pcall(function() r:FireServer("Cast") end)
+                    if not ok then print("[DEBUG] FireServer('Cast') gagal:", err) end
+                    task.wait(getgenv().Delay)
+                    local ok2, err2 = pcall(function() r:FireServer("Reel") end)
+                    if not ok2 then print("[DEBUG] FireServer('Reel') gagal:", err2) end
+                else
+                    -- Tidak ada remote terdeteksi: hentikan sementara dan print instruksi
+                    print("[DEBUG] Tidak ada RemoteEvent kandidat -> hentikan loop auto (cek RemoteSpy).")
+                    getgenv().AutoMancing = false
+                end
+            end)
+        end
+        task.wait(0.5)
+    end
+end)
 
-CreditsTab:AddParagraph("Developer", "Script by MouseExploitSec\nGUI by OrionLib\nExecutor: Delta")
-
--- Start Orion
-OrionLib:Init()
+print("[DEBUG] Script siap. Periksa Output (Console) untuk detail deteksi remote dan error.")
