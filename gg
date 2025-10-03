@@ -1,4 +1,4 @@
--- Indo Hangout Auto Fishing GUI
+-- Indo Hangout Auto Fishing GUI v2
 -- Loader: loadstring(game:HttpGet("https://raw.githubusercontent.com/USERNAME/REPO/main/indohangout_auto.lua"))()
 
 -- Ambil Orion Library
@@ -6,7 +6,7 @@ local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/shle
 
 -- Window
 local Window = OrionLib:MakeWindow({
-    Name = "Indo Hangout | Auto Mancing",
+    Name = "Indo Hangout | Auto Mancing v2",
     HidePremium = false,
     SaveConfig = true,
     ConfigFolder = "IndoHangoutFishing"
@@ -15,13 +15,34 @@ local Window = OrionLib:MakeWindow({
 -- Variabel
 getgenv().AutoMancing = false
 getgenv().Delay = 1
+local StatusLabel = "OFF"
 
--- Tab
+-- Anti AFK
+local vu = game:GetService("VirtualUser")
+game:GetService("Players").LocalPlayer.Idled:Connect(function()
+    vu:Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame)
+    task.wait(1)
+    vu:Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame)
+end)
+
+-- Cari RemoteEvent Fishing otomatis
+local FishingRemote = nil
+for _,v in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+    if v:IsA("RemoteEvent") and string.lower(v.Name):find("fish") then
+        FishingRemote = v
+        break
+    end
+end
+
+-- Tab Main
 local MainTab = Window:MakeTab({
     Name = "Main",
     Icon = "rbxassetid://4483345998",
     PremiumOnly = false
 })
+
+-- Status Info
+MainTab:AddParagraph("Status", "Auto Mancing: "..StatusLabel)
 
 -- Toggle Auto Mancing
 MainTab:AddToggle({
@@ -29,24 +50,34 @@ MainTab:AddToggle({
     Default = false,
     Callback = function(Value)
         getgenv().AutoMancing = Value
+        StatusLabel = Value and "ON ✅" or "OFF ❌"
+        
         if Value then
             OrionLib:MakeNotification({
                 Name = "Fishing Started",
-                Content = "Auto Mancing sedang berjalan!",
+                Content = "Auto Mancing Aktif!",
                 Image = "rbxassetid://4483345998",
                 Time = 3
             })
             task.spawn(function()
                 while getgenv().AutoMancing do
                     pcall(function()
-                        -- ⚠️ Ganti RemoteEvent sesuai nama aslinya di game Indo Hangout
-                        game:GetService("ReplicatedStorage").Events.Fishing:FireServer("Cast")
-                        task.wait(getgenv().Delay)
-                        game:GetService("ReplicatedStorage").Events.Fishing:FireServer("Reel")
+                        if FishingRemote then
+                            FishingRemote:FireServer("Cast")
+                            task.wait(getgenv().Delay)
+                            FishingRemote:FireServer("Reel")
+                        end
                     end)
                     task.wait(getgenv().Delay)
                 end
             end)
+        else
+            OrionLib:MakeNotification({
+                Name = "Fishing Stopped",
+                Content = "Auto Mancing Berhenti.",
+                Image = "rbxassetid://4483345998",
+                Time = 3
+            })
         end
     end
 })
@@ -65,6 +96,21 @@ MainTab:AddSlider({
     end
 })
 
+-- Tombol Stop manual
+MainTab:AddButton({
+    Name = "Stop Auto Mancing",
+    Callback = function()
+        getgenv().AutoMancing = false
+        StatusLabel = "OFF ❌"
+        OrionLib:MakeNotification({
+            Name = "Stopped",
+            Content = "Auto Mancing dimatikan manual.",
+            Image = "rbxassetid://4483345998",
+            Time = 2
+        })
+    end
+})
+
 -- Info Tab
 local InfoTab = Window:MakeTab({
     Name = "Info",
@@ -72,6 +118,16 @@ local InfoTab = Window:MakeTab({
     PremiumOnly = false
 })
 
-InfoTab:AddParagraph("Cara Pakai", "1. Klik Auto Mancing\n2. Atur Delay sesuai kecepatan\n3. Nikmati auto manciang 😎")
+InfoTab:AddParagraph("Cara Pakai", "1. Klik Auto Mancing\n2. Atur Delay sesuai kecepatan\n3. Bisa Stop kapan saja\n4. Anti-AFK aktif otomatis\n5. RemoteEvent Fishing otomatis terdeteksi")
 
+-- Credits Tab
+local CreditsTab = Window:MakeTab({
+    Name = "Credits",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+CreditsTab:AddParagraph("Developer", "Script by MouseExploitSec\nGUI by OrionLib\nExecutor: Delta")
+
+-- Start Orion
 OrionLib:Init()
