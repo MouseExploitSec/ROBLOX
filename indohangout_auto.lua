@@ -72,6 +72,6 @@ local InfoTab = Window:MakeTab({
     PremiumOnly = false
 })
 
-InfoTab:AddParagraph("Cara Pakai", "1. Klik Auto Mancing\n2. Atur Delay sesuai kecepatan\n3. Nikmati auto mancing 😎")
+InfoTab:AddParagraph("Cara Pakai", "1. Klik Auto Mancing\n2. Atur Delay sesuai kecepatan\n3. Nikmati auto manciang 😎")
 
 OrionLib:Init()
