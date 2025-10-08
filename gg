@@ -1,364 +1,76 @@
--- Indo Hangout Auto Fishing v4 (Optimized)
-local function safeGet(url)
-    local ok, res = pcall(function()
-        return game:HttpGet(url, true)
-    end)
-    return ok and res or nil, ok and nil or res
-end
+-- GeneratorClient (LocalScript dalam ScreenGui)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
--- Load Orion Lib
-local OrionLib = nil
-do
-    local url = "https://raw.githubusercontent.com/shlexware/Orion/main/source"
-    local body, err = safeGet(url)
-    if body then
-        local ok, lib = pcall(function() return loadstring(body)() end)
-        if ok and lib then
-            OrionLib = lib
-            print("✅ OrionLib loaded")
-        end
+local player = Players.LocalPlayer
+local GeneratorEvent = ReplicatedStorage:WaitForChild("GeneratorEvent")
+
+-- Ganti path sesuai struktur GUI Anda
+local screenGui = script.Parent
+local main = screenGui:WaitForChild("Main")
+local title = main:WaitForChild("Title")
+local resourceLabel = main:WaitForChild("ResourceLabel")
+local startStopBtn = main:WaitForChild("StartStopButton")
+local collectBtn = main:WaitForChild("CollectButton")
+local upgradeBtn = main:WaitForChild("UpgradeButton")
+
+local running = false
+
+local function updateUI(data)
+    -- data diharapkan table {buffer, balance, rate, interval, upgradeLevel, nextUpgradeCost}
+    resourceLabel.Text = string.format("Buffer: %d  |  Balance: %d\nRate: %.1f / %ds  |  Lv: %d  | Next upgrade: %d",
+        data.buffer or 0, data.balance or 0, data.rate or 0, data.interval or 0, data.upgradeLevel or 0, data.nextUpgradeCost or 0)
+    if data.running then
+        startStopBtn.Text = "Stop"
+    else
+        startStopBtn.Text = "Start"
     end
 end
 
--- Settings
-getgenv().AutoMancing = false
-getgenv().Delay = 3
-getgenv().SelectedRemote = nil
-getgenv().UseClick = false
-
--- Anti-AFK
-pcall(function()
-    local vu = game:GetService("VirtualUser")
-    game:GetService("Players").LocalPlayer.Idled:connect(function()
-        vu:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-        wait(1)
-        vu:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-    end)
-end)
-
--- Cari RemoteEvent khusus untuk fishing
-local function findFishingRemote()
-    local locations = {
-        game:GetService("ReplicatedStorage"),
-        game:GetService("Workspace"),
-        game:GetService("ServerScriptService")
-    }
-    
-    -- Prioritas tinggi: remote dengan nama yang berkaitan fishing
-    local fishingKeywords = {"fish", "fishing", "mancing", "rod", "cast", "reel", "catch", "ikan", "tangkap"}
-    
-    for _, location in ipairs(locations) do
-        pcall(function()
-            for _, obj in ipairs(location:GetDescendants()) do
-                if obj:IsA("RemoteEvent") then
-                    local name = obj.Name:lower()
-                    for _, keyword in ipairs(fishingKeywords) do
-                        if name:find(keyword) then
-                            return obj
-                        end
-                    end
-                end
-            end
-        end)
-    end
-    
-    -- Jika tidak ketemu, cari remote yang umum
-    for _, location in ipairs(locations) do
-        pcall(function()
-            for _, obj in ipairs(location:GetDescendants()) do
-                if obj:IsA("RemoteEvent") then
-                    return obj
-                end
-            end
-        end)
-    end
-    
-    return nil
-end
-
--- Cari Tool fishing di backpack
-local function findFishingRod()
-    local player = game:GetService("Players").LocalPlayer
-    local backpack = player:FindFirstChild("Backpack")
-    local character = player.Character
-    
-    if backpack then
-        for _, tool in ipairs(backpack:GetChildren()) do
-            if tool:IsA("Tool") then
-                local name = tool.Name:lower()
-                if name:find("rod") or name:find("fishing") or name:find("mancing") or name:find("pancing") then
-                    return tool
-                end
-            end
-        end
-    end
-    
-    if character then
-        for _, tool in ipairs(character:GetChildren()) do
-            if tool:IsA("Tool") then
-                local name = tool.Name:lower()
-                if name:find("rod") or name:find("fishing") or name:find("mancing") or name:find("pancing") then
-                    return tool
-                end
-            end
-        end
-    end
-    
-    return nil
-end
-
--- Test remote dengan command yang umum
-local function testFishingCommands(remote)
-    print("\n🎣 Testing Fishing Commands...")
-    
-    local commands = {
-        "Cast", "Reel", "Fish", "Fishing", "Catch",
-        "Mancing", "Ikan", "Tangkap", "Start", "Stop",
-        "Lempar", "Tarik", "Throw", "Pull"
-    }
-    
-    for _, cmd in ipairs(commands) do
-        local success, result = pcall(function()
-            remote:FireServer(cmd)
-            return true
-        end)
-        
-        if success then
-            print("✅ " .. cmd .. " - WORKING!")
-            return cmd
-        else
-            print("❌ " .. cmd .. " - failed")
-        end
-        wait(0.2)
-    end
-    
-    return nil
-end
-
--- Auto equip fishing rod
-local function equipFishingRod()
-    local rod = findFishingRod()
-    if rod then
-        pcall(function()
-            game:GetService("Players").LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):EquipTool(rod)
-            print("🎣 Fishing rod equipped: " .. rod.Name)
-        end)
-    end
-end
-
--- Temukan remote otomatis
-local fishingRemote = findFishingRemote()
-local workingCommand = nil
-
-if fishingRemote then
-    print("🎯 Found fishing remote: " .. fishingRemote:GetFullName())
-    workingCommand = testFishingCommands(fishingRemote)
-    getgenv().SelectedRemote = fishingRemote
-else
-    print("❌ No fishing remote found")
-end
-
--- Buat GUI
-if OrionLib then
-    local Window = OrionLib:MakeWindow({
-        Name = "Indo Hangout Auto Fish", 
-        HidePremium = false, 
-        SaveConfig = true, 
-        ConfigFolder = "IndoFish"
-    })
-    
-    local mainTab = Window:MakeTab({Name = "Auto Fishing"})
-    local debugTab = Window:MakeTab({Name = "Tools"})
-    
-    -- Status Info
-    mainTab:AddParagraph("Status", fishingRemote and 
-        "Remote: " .. fishingRemote.Name .. 
-        (workingCommand and "\nCommand: " .. workingCommand .. " ✅" or "\nTesting commands...") 
-        or "No remote found! ❌")
-    
-    -- Auto Fishing Toggle
-    mainTab:AddToggle({
-        Name = "Start Auto Fishing",
-        Default = false,
-        Callback = function(val)
-            getgenv().AutoMancing = val
-            if val then
-                if not fishingRemote then
-                    OrionLib:MakeNotification({
-                        Name = "Error",
-                        Content = "Tidak ada remote fishing yang ditemukan!",
-                        Time = 5
-                    })
-                    getgenv().AutoMancing = false
-                    return
-                end
-                
-                -- Auto equip rod saat start
-                equipFishingRod()
-                
-                OrionLib:MakeNotification({
-                    Name = "Auto Fishing Started",
-                    Content = "Auto fishing sedang berjalan...",
-                    Time = 3
-                })
-                print("🚀 AUTO FISHING STARTED")
-            else
-                OrionLib:MakeNotification({
-                    Name = "Auto Fishing Stopped", 
-                    Content = "Auto fishing dihentikan",
-                    Time = 3
-                })
-                print("⏹️ AUTO FISHING STOPPED")
-            end
-        end
-    })
-    
-    -- Settings
-    mainTab:AddSlider({
-        Name = "Fishing Delay (seconds)",
-        Min = 1,
-        Max = 10,
-        Default = 3,
-        Color = Color3.fromRGB(255,255,255),
-        Increment = 0.5,
-        ValueName = "seconds",
-        Callback = function(val)
-            getgenv().Delay = val
-            print("⏱️ Delay: " .. val .. "s")
-        end
-    })
-    
-    -- Manual Controls
-    mainTab:AddButton({
-        Name = "Equip Fishing Rod",
-        Callback = function()
-            equipFishingRod()
-        end
-    })
-    
-    mainTab:AddButton({
-        Name = "Test Cast",
-        Callback = function()
-            if fishingRemote then
-                pcall(function()
-                    fishingRemote:FireServer("Cast")
-                    print("🎣 Manual cast!")
-                end)
-            end
-        end
-    })
-    
-    mainTab:AddButton({
-        Name = "Test Reel",
-        Callback = function()
-            if fishingRemote then
-                pcall(function()
-                    fishingRemote:FireServer("Reel")
-                    print("🎣 Manual reel!")
-                end)
-            end
-        end
-    })
-    
-    -- Debug Tools
-    debugTab:AddButton({
-        Name = "Find Fishing Rod",
-        Callback = function()
-            local rod = findFishingRod()
-            if rod then
-                print("🎣 Found rod: " .. rod:GetFullName())
-                OrionLib:MakeNotification({
-                    Name = "Fishing Rod Found",
-                    Content = rod.Name .. " ditemukan!",
-                    Time = 5
-                })
-            else
-                print("❌ No fishing rod found")
-                OrionLib:MakeNotification({
-                    Name = "No Rod Found",
-                    Content = "Tidak ada fishing rod di inventory!",
-                    Time = 5
-                })
-            end
-        end
-    })
-    
-    debugTab:AddButton({
-        Name = "Rescan Remotes",
-        Callback = function()
-            fishingRemote = findFishingRemote()
-            if fishingRemote then
-                workingCommand = testFishingCommands(fishingRemote)
-                getgenv().SelectedRemote = fishingRemote
-                OrionLib:MakeNotification({
-                    Name = "Rescan Complete",
-                    Content = "Remote ditemukan: " .. fishingRemote.Name,
-                    Time = 5
-                })
-            else
-                OrionLib:MakeNotification({
-                    Name = "Rescan Failed", 
-                    Content = "Tidak ada remote fishing ditemukan",
-                    Time = 5
-                })
-            end
-        end
-    })
-    
-    debugTab:AddParagraph("Debug Info", "Game: Indo Hangout\nPlace ID: " .. game.PlaceId)
-    
-    OrionLib:Init()
-end
-
--- Main Fishing Loop
-task.spawn(function()
-    local lastFishingTime = 0
-    
-    while true do
-        if getgenv().AutoMancing and fishingRemote then
-            local currentTime = tick()
-            
-            -- Cek jika sudah waktunya fishing lagi
-            if currentTime - lastFishingTime >= getgenv().Delay then
-                
-                -- Cast fishing
-                pcall(function()
-                    fishingRemote:FireServer("Cast")
-                    print("🎣 Casting...")
-                end)
-                
-                -- Tunggu delay
-                wait(getgenv().Delay)
-                
-                -- Reel in
-                pcall(function()
-                    fishingRemote:FireServer("Reel")
-                    print("✅ Reeling...")
-                end)
-                
-                lastFishingTime = tick()
-                
-                -- Update GUI status setiap 10 cycle
-                if math.random(1, 10) == 1 then
-                    print("🔁 Auto fishing cycle running...")
-                end
-            end
-        end
-        
-        wait(0.5)
+-- Tombol start/stop
+startStopBtn.MouseButton1Click:Connect(function()
+    if running then
+        GeneratorEvent:FireServer("stop")
+        running = false
+        startStopBtn.Text = "Start"
+    else
+        GeneratorEvent:FireServer("start")
+        running = true
+        startStopBtn.Text = "Stop"
     end
 end)
 
-print("\n" .. string.rep("=", 50))
-print("🎣 INDO HANGOUT AUTO FISHING V4 LOADED!")
-print("🎯 " .. (fishingRemote and "Remote: " .. fishingRemote.Name or "No remote found"))
-print("⚡ " .. (workingCommand and "Command: " .. workingCommand .. " ✅" or "Testing commands..."))
-print("⏱️  Default delay: " .. getgenv().Delay .. "s")
-print(string.rep("=", 50))
-print("Instructions:")
-print("1. Pastikan punya fishing rod di inventory")
-print("2. Klik 'Equip Fishing Rod' jika perlu")
-print("3. Atur delay sesuai kebutuhan")
-print("4. Klik 'Start Auto Fishing'")
-print("5. Lihat console untuk status")
-print(string.rep("=", 50))
+-- Tombol collect
+collectBtn.MouseButton1Click:Connect(function()
+    GeneratorEvent:FireServer("collect")
+end)
+
+-- Tombol upgrade
+upgradeBtn.MouseButton1Click:Connect(function()
+    GeneratorEvent:FireServer("upgrade")
+end)
+
+-- Terima event dari server
+GeneratorEvent.OnClientEvent:Connect(function(eventType, payload)
+    if eventType == "update" then
+        updateUI(payload)
+    elseif eventType == "collected" then
+        updateUI(payload)
+        -- animasi singkat atau efek bisa ditambahkan di sini
+    elseif eventType == "upgraded" then
+        updateUI(payload)
+        -- notifikasi
+    elseif eventType == "upgrade_failed" then
+        -- tampilkan alasan
+        -- contoh sederhana: perubahan teks title
+        title.Text = "Upgrade failed: " .. (payload.reason or "unknown")
+        wait(2)
+        title.Text = "Generator"
+    elseif eventType == "stopped" then
+        running = false
+        startStopBtn.Text = "Start"
+    end
+end)
+
+-- Ambil state awal
+GeneratorEvent:FireServer("get_state")
